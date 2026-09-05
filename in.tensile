@@ -1,0 +1,56 @@
+# ==============================================================================
+# UNIAXIAL TENSILE DEFORMATION OF Fe-Cu SYSTEM
+# ==============================================================================
+
+# 1. INITIALIZATION
+units           metal
+dimension       3
+boundary        p p p
+atom_style      atomic
+
+# 2. LATTICE & GEOMETRY SETUP (BCC Iron)
+lattice         bcc 2.855
+region          box block 0 15 0 15 0 15
+create_box      2 box
+create_atoms    1 box
+
+# 3. TRAMP ELEMENT INJECTION (Copper Impurities)
+variable        cu_frac index 0.00
+set region      box type/fraction 2 ${cu_frac} 12345
+
+# 4. INTERATOMIC POTENTIAL (Bonny 2009 Fe-Cu-Ni)
+pair_style      eam/alloy
+pair_coeff      * * FeCuNi.eam.alloy Fe Cu
+mass            1 55.845
+mass            2 63.546
+
+# 5. ENERGY MINIMIZATION
+minimize        1.0e-4 1.0e-6 1000 10000
+
+# 6. THERMAL EQUILIBRATION (NPT)
+velocity        all create 300.0 87287
+fix             1 all npt temp 300.0 300.0 0.1 x 0.0 0.0 1.0 y 0.0 0.0 1.0 z 0.0 0.0 1.0
+timestep        0.001
+thermo          1000
+run             10000
+unfix           1
+
+# 7. UNIAXIAL TENSILE DEFORMATION
+reset_timestep  0
+variable        tmp equal lz
+variable        L0 equal ${tmp}
+variable        strain equal "(lz - v_L0)/v_L0"
+variable        stress equal "-pzz/10000"  # Stress in GPa
+
+fix             1 all nvt temp 300.0 300.0 0.1
+fix             2 all deform 1 z erate 0.005 units box
+
+# 8. OUTPUT DEFINITIONS
+fix             extra all print 100 "${strain} ${stress}" file stress_strain_${cu_frac}.txt title "Strain Stress(GPa)" screen no
+dump            1 all custom 1000 dump_${cu_frac}.lammpstrj id type x y z
+
+thermo          500
+thermo_style    custom step v_strain v_stress pzz temp
+thermo_modify   flush yes
+
+run             30000
